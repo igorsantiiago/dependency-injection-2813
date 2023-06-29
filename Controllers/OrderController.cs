@@ -2,34 +2,34 @@ using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using OrderProject.Models;
+using OrderProject.Repositories.Contracts;
+using OrderProject.Services.Contracts;
 using RestSharp;
 
 namespace OrderProject.Controllers;
 
-public class OrderProjectController : ControllerBase
+public class OrderController : ControllerBase
 {
+    private readonly ICustomerRepository _customerRepository;
+    private readonly IDeliveryFeeService _deliveryFeeService;
+
+    public OrderController(ICustomerRepository customerRepository, IDeliveryFeeService deliveryFeeService)
+    {
+        _customerRepository = customerRepository;
+        _deliveryFeeService = deliveryFeeService;
+    }
+
     [Route("v1/orders")]
     [HttpPost]
     public async Task<IActionResult> Place(string customerId, string zipCode, string promoCode, int[] products)
     {
         // # 1 - Recupera o cliente
-        Customer customer = null;
-        await using (var conn = new SqlConnection("CONN_STRING"))
-        {
-            const string query = "SELECT [Id], [Name], [Email] FROM CUSTOMER WHERE ID=@id";
-            customer = await conn.QueryFirstAsync<Customer>(query, new { id = customerId });
-        }
+        var customer = await _customerRepository.GetByIdAsync(customerId);
+        if (customer == null)
+            return NotFound(); // TODO
 
         // # 2 - Calcula o frete
-        decimal deliveryFee = 0;
-
-        var client = new RestClient("https://consultafrete.io/cep/");
-        var request = new RestRequest().AddJsonBody(new { zipCode });
-
-        deliveryFee = await client.PostAsync<decimal>(request, new CancellationToken());
-
-        if (deliveryFee < 5)
-            deliveryFee = 5;
+        var deliveryFee = await _deliveryFeeService.GetDeliveryFeeAsync(zipCode);
 
         // # 3 - Calcula o total de Produtos
         decimal subTotal = 0;
